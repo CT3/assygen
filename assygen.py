@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 from gerber2pdf import *
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
@@ -7,6 +6,11 @@ from reportlab.lib.units import mm
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 import csv
+import Tkinter, tkFileDialog
+root = Tkinter.Tk()
+root.withdraw()
+dirname = tkFileDialog.askdirectory(parent=root,initialdir="/",title='Please select directory where Gerber and Pick and Place(CSV) files are located all files should be in the same folder')
+
 
 class PPComponent:
     def __init__(self,xc, yc, w, h, name, desc, ref):
@@ -24,11 +28,9 @@ class PPComponent:
         self.desc = desc
         self.ref = ref
 
-
-
 class PickAndPlaceFile:
     def split_parts(self, layer, index, n_comps):
-        parts = [];
+        parts = []
         n=0
         for i in sorted(self.layers[layer].iterkeys()):
             if(n >= index and n < index+n_comps):
@@ -48,7 +50,7 @@ class PickAndPlaceFile:
             n=n+1
             for j in i:
                 canv.rect(j.xc - j.w/2, j.yc-j.h/2, j.w, j.h, 1, 1)
-    
+
     def gen_table(self, layer, index, n_comps,canv):
         parts = self.split_parts(layer, index, n_comps)
 
@@ -56,10 +58,10 @@ class PickAndPlaceFile:
         canv.setFont("Helvetica",10)
         canv.setStrokeGray(0)
         canv.setFillGray(0)
-        canv.drawString(20 * mm, yt, "Color");
-        canv.drawString(40 * mm, yt, "Lib.Reference");
-        canv.drawString(80 * mm, yt, "Comment");
-        canv.drawString(120 * mm, yt, "Designators");
+        canv.drawString(20 * mm, yt, "Color")
+        canv.drawString(40 * mm, yt, "Package")
+        canv.drawString(80 * mm, yt, "Value")
+        canv.drawString(120 * mm, yt, "Designators")
         n=0
         for group in parts:
             dsgn = ""
@@ -70,132 +72,78 @@ class PickAndPlaceFile:
             n=n+1
             for part in group:
                 dsgn = dsgn + " " + part.name
-            canv.drawString(120 * mm, yt, dsgn);
-            canv.drawString(40 * mm, yt, group[0].ref[0:20]);
-            canv.drawString(80 * mm, yt, group[0].desc[0:20]);
+            canv.drawString(120 * mm, yt, dsgn)
+            canv.drawString(40 * mm, yt, group[0].ref[0:20])
+            canv.drawString(80 * mm, yt, group[0].desc[0:20])
 
-#            table.append(["", dsgn, group[0].desc, group[0].ref])
-
-   
-    
 
 class PickAndPlaceFileKicad(PickAndPlaceFile):
     def __init__(self, fname):
-	print("Load")
-	f= open(fname,'r')
-	rows=[]
-	for line in f:
-	    rows.append(line.split())
-	    
+        print("Load pick and place file")
+        with open(fname, 'rb') as csvfile:
+            reader = csv.reader(csvfile, delimiter=',',)
+            rows = []
+            for row in reader:
+                rows.append(row)
 
-        self.col_map = [colors.Color(1,0,0), 
-                  colors.Color(1,1,0), 
-                  colors.Color(0,1,0), 
-                  colors.Color(0,1,1), 
-                  colors.Color(1,0,1), 
-                  colors.Color(0,0,1)]
+            self.col_map = [colors.Color(1,0,0), colors.Color(1,1,0), colors.Color(0,1,0), colors.Color(0,1,1), colors.Color(1,0,1), colors.Color(0,0,1)]
 
-#	Ref    Val                  Package         PosX       PosY        Rot     Side
+            i_ref = rows[0].index("Designator")
+            i_val = rows[0].index("Comment")
+            i_package = rows[0].index("Footprint")
+            i_cx = rows[0].index("Ref X")
+            i_cy = rows[0].index("Ref Y")
+            i_rot = rows[0].index("Rotation")
+            i_layer = rows[0].index("Layer")
 
+            self.layers = {"T":{}, "B":{}}
 
-        i_dsg = rows[0].index("Ref")
-        i_desc = rows[0].index("Val")
-        i_cx = rows[0].index("PosX")
-        i_cy = rows[0].index("PosY")
-        i_layer = rows[0].index("Side")
-
-        self.layers = {};
-        self.layers["Top"] = {};        
-        self.layers["Bottom"] = {};
-       
-	print(i_dsg, i_desc, i_cx, i_cy);
-        for i in rows[1:]:
-            if(len(i)>0):
-		print(i[i_dsg], i[i_cx])
-                cx = float(i[i_cx]) * mm
-                cy = float(i[i_cy]) * mm
-
-                w = 1 * mm
-                h = 1 * mm
-                l = i[i_layer]
-		if l == "F.Cu":
-		    layer = "Top"
-		else:
-		    layer = "Bottom"
-                ref = i[i_desc]
-#                print(ref,cy, py)
-                if(not ref in self.layers[layer]):
-                    self.layers[layer][ref] = []
-                self.layers[layer][ref].append(PPComponent(cx, cy, w, h, i[i_dsg], i[i_desc], ref))
+            for i in rows[2:]:
+                if(len(i)>0):
+                    cxi= str(i[i_cx]);
+                    cxi = cxi.replace("mm","")
+                    cyi= str(i[i_cy]);
+                    cyi = cyi.replace("mm","")
+                    cx = float(cxi) * mm
+                    cy = float(cyi) * mm
+                    layer = i[i_layer]
+                    ref = i[i_val]
+                    if(ref not in self.layers[layer]):
+                        self.layers[layer][ref] = []
+                    self.layers[layer][ref].append(PPComponent(cx, cy, 1*mm, 1*mm, i[i_ref], ref, i[i_package]))
+                    #print([cx, cy, 1*mm, 1*mm, ref, i[i_val], i[i_package]])
+                    #self.layers[layer][ref].append(PPComponent(cx, cy, 1 * mm, 1 * mm, ref, i[i_val], i[i_package]))
 
 
-#class PickAndPlaceFileKicad(PickAndPlaceFile):
-#    def __init__(self, fname):
-#	print("Load")
-#        reader = csv.reader(open(fname,'rb') ,delimiter=' ')
-#        rows = []
-#        for row in reader:
-#            rows.append(row)
-#
-#        self.col_map = [colors.Color(1,0,0), 
-#                  colors.Color(1,1,0), 
-#                  colors.Color(0,1,0), 
-#                  colors.Color(0,1,1), 
-#                  colors.Color(1,0,1), 
-#                  colors.Color(0,0,1)]
-#
-#        i_dsg = rows[0].index("Designator")
-#        i_desc = rows[0].index("Description")
-#        i_cx = rows[0].index("Center-X(mm)")
-#        i_cy = rows[0].index("Center-Y(mm)")
-#        i_px = rows[0].index("Pad-X(mm)")
-#        i_py = rows[0].index("Pad-Y(mm)")
-#        i_layer = rows[0].index("Layer")
-#        i_ref = rows[0].index("LibRef")
-#
-#        self.layers = {};
-#        self.layers["Top"] = {};        
-#        self.layers["Bottom"] = {};
-#       
-#        for i in rows[1:]:
-#            if(len(i)>0):
-#                cx = float(i[i_cx]) * mm
-#                cy = float(i[i_cy]) * mm
-#                px = float(i[i_px]) * mm
-#                py = float(i[i_py]) * mm
-#                w = abs(cx-px) * 2
-#                h = abs(cy-py) * 2
-#                layer = i[i_layer]
-#                ref = i[i_ref]
-#                print(ref,cy, py)
-#                if(not ref in self.layers[layer]):
-#                    self.layers[layer][ref] = []
-#                self.layers[layer][ref].append(PPComponent(cx, cy, w, h, i[i_dsg], i[i_desc], ref))
+def findFileInDir(dir_path, file_extension):
+    for file in os.listdir(dir_path):
+        if file.endswith(file_extension):
+            print(file_extension+" file found:"+os.path.join(dir_path, file))
+            return os.path.join(dir_path, file)
+    raise Exception('{0} file not found in {1} directory!'.format(file_extension, dir_path))
 
-def renderGerber(base_name, layer, canv):
+def renderGerber(path, layer, canv):
     global gerberExtents
-    if(layer == "Bottom"):
-        f_copper = base_name+".GBL"
-        f_overlay = base_name+".GBO"
+    if(layer == "bottom"):
+        f_copper = findFileInDir(path, ".GBL")
+        f_overlay = findFileInDir(path, ".GBO")
     else:
-        f_copper = base_name+".GTL"
-        f_overlay = base_name+".GTO"
+        f_copper = findFileInDir(path, ".GTL")
+        f_overlay = findFileInDir(path, ".GTO")
 
     canv.setLineWidth(0.0)
     gm = GerberMachine( "", canv )
     gm.Initialize()
     ResetExtents()
     gm.setColors(colors.Color(0.85,0.85,0.85), colors.Color(0,0,0))
-    gm.ProcessFile( f_copper )
+    gm.ProcessFile(f_copper)
     gm.setColors(colors.Color(0.5,0.5,0.5), colors.Color(0,0,0))
-    return gm.ProcessFile( f_overlay )
+    return gm.ProcessFile(f_overlay)
 
 
-def producePrintoutsForLayer(base_name, layer, canv):
-
-
-    ctmp = canvas.Canvas(base_name + "_assy.pdf")
-    ext = renderGerber(base_name, layer, ctmp);
+def producePrintoutsForLayer(path, layer, canv, file_name):
+    ctmp = canvas.Canvas(file_name)
+    ext = renderGerber(path, layer, ctmp)
 
     scale1 = (gerberPageSize[0]-2*gerberMargin)/((ext[2]-ext[0]))
     scale2 = (gerberPageSize[1]-2*gerberMargin)/((ext[3]-ext[1]))
@@ -205,34 +153,66 @@ def producePrintoutsForLayer(base_name, layer, canv):
     gerberOffset = (-ext[0]*scale + gerberMargin, -ext[1]*scale + gerberMargin)
 #    print "Offset (in.): (%4.2f, %4.2f)" % (gerberOffset[0]/inch,gerberOffset[1]/inch)
 #    print "Scale (in.):  (%4.2f, %4.2f)" % gerberScale
-
-
-
-    pf = PickAndPlaceFileKicad(base_name+".CSV")
+    pf = PickAndPlaceFileKicad(findFileInDir(path, ".csv"))
     ngrp =  pf.num_groups(layer)
+    print(ngrp)
 
     for page in range(0, (ngrp+5)/6):
         n_comps = min(6, ngrp - page*6)
 
         canv.saveState()
         canv.translate( gerberOffset[0], gerberOffset[1] )
-        if(layer == "Bottom"):
+        if(layer == "bottom"):
             canv.scale( gerberScale[0], gerberScale[1] )
-#            canv.scale( -1, 1 )
-#            canv.translate(-0.5*gerberPageSize[0],0)
+            canv.scale( -1, 1 )
+            canv.translate(-0.4*gerberPageSize[0],0)
         else:
             canv.scale( gerberScale[0], gerberScale[1] )
 
-        renderGerber(base_name, layer, canv);
+        renderGerber(path, layer, canv)
 
-        pf.draw(layer, page*6, n_comps, canv);
+        pf.draw(layer, page*6, n_comps, canv)
 
         canv.restoreState()
-        pf.gen_table(layer, page*6, n_comps, canv);
+        pf.gen_table(layer, page*6, n_comps, canv)
         canv.showPage()
 
-import sys
-canv = canvas.Canvas(sys.argv[1]+"_assy.pdf")
-#producePrintoutsForLayer(sys.argv[1], "Top", canv)
-producePrintoutsForLayer(sys.argv[1], "Bottom", canv)
+import argparse
+import os
+import tempfile
+import shutil
+import atexit
+
+class valid_directory(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        prospective_dir=values
+        if not os.path.isdir(prospective_dir):
+            raise argparse.ArgumentTypeError("valid_directory:{0} is not a valid path".format(prospective_dir))
+        if os.access(prospective_dir, os.R_OK):
+            setattr(namespace,self.dest,prospective_dir)
+        else:
+            raise argparse.ArgumentTypeError("valid_directory:{0} is not a readable dir".format(prospective_dir))
+
+ldir = tempfile.mkdtemp()
+atexit.register(lambda dir=ldir: shutil.rmtree(ldir))
+
+parser = argparse.ArgumentParser(description='Generate a PDF file for pick and place assembly')
+#parser.add_argument('path', help='Path to input files (GBL, GBO, GTL, GTO and CSV) directory', action=valid_directory)
+parser.add_argument('--path', help='Path to input files (GBL, GBO, GTL, GTO and CSV) directory', default = dirname)
+parser.add_argument('--o', '--output', type=str, metavar='<filename>', help='Specify the output file name')
+
+args = parser.parse_args()
+
+if args.o != None:
+    file_name = args.path+'/'+args.o
+else:
+    file_name = args.path+"/assygen.pdf"
+
+print("Path: "+args.path)
+print("Output file name: "+file_name)
+
+canv = canvas.Canvas(file_name)
+
+producePrintoutsForLayer(args.path, "T", canv, file_name)
+producePrintoutsForLayer(args.path, "B", canv, file_name)
 canv.save()
